@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QListWidget, QListWidgetItem
 from PyQt5.QtWidgets import QHBoxLayout, QVBoxLayout, QApplication, QWidget
-from PyQt5.QtWidgets import QLabel, QSlider, QPushButton
+from PyQt5.QtWidgets import QLabel, QSlider, QPushButton, QFileDialog
 from PyQt5.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
@@ -22,7 +22,7 @@ class Window(QWidget):
     def __init__(self):
         super().__init__()
 
-        self.load_image()
+        self.load_image('res\\niceimage.jpg')
         self.root_layout = QHBoxLayout()
 
         self.control_view = self.build_control_view()
@@ -88,9 +88,15 @@ class Window(QWidget):
         v_layout.addLayout(colors_info_layout)
 
         self.operations_list_widget = QListWidget()
+        self.operations_list_widget.setDragEnabled(True)
+
+        l1 = QListWidgetItem('Hello')
+        l1.setCheckState(Qt.Unchecked)
+        self.operations_list_widget.insertItem(1, l1)
 
         h_layout.addLayout(v_layout, stretch=50)
         h_layout.addWidget(self.operations_list_widget, stretch=50)
+        l1 = QListWidgetItem('Hello')
 
 
         h_pipeline = QHBoxLayout()
@@ -99,11 +105,17 @@ class Window(QWidget):
         
         self.run_button = QPushButton('run')
         self.open_image_button = QPushButton('open')
+        self.open_image_button.clicked.connect(self.open_image)
+        self.clear_pipeline_button = QPushButton('clear')
         buttons_layout.addWidget(self.run_button, stretch=5)
+        buttons_layout.addWidget(self.clear_pipeline_button, stretch=5)
         buttons_layout.addWidget(self.open_image_button, stretch=5)
 
 
         self.pipeline_operations_widget = QListWidget()
+        self.pipeline_operations_widget.setAcceptDrops(True)
+        self.pipeline_operations_widget.setDragEnabled(True)
+
         h_pipeline.addWidget(self.pipeline_operations_widget)
         h_pipeline.addLayout(buttons_layout)
 
@@ -132,10 +144,17 @@ class Window(QWidget):
 
         return view_layout
 
-    def load_image(self):
-        self.image = np.array(Image.open('res\\niceimage.jpg'))
-        self.shown_image = self.image
+    
+    def open_image(self):
+        path, f = QFileDialog.getOpenFileName(self,
+                         'Select image', filter="Images (*.png *.jpg);")
+        print(f, path)
+        self.load_image(path)
+        self.show_image(self.image)
 
+    # TODO check for image channels (must be 3)
+    def load_image(self, path):
+        self.image = np.array(Image.open(path))
     
     def mouse_moved_on_image(self, mouse_event):
         if not mouse_event.inaxes:
@@ -162,13 +181,13 @@ class Window(QWidget):
 
         s = s / 100.0 + 0.5
         v = v / 100.0 + 0.5
-        self.shown_image = T.transform_hsv(self.image, h, s, v).numpy()
-        self.show_image(self.shown_image)
+        self.show_image(T.transform_hsv(self.image, h, s, v).numpy())
 
     def show_image(self, image):
         self.image_figure.clear()
         axs = self.image_figure.add_subplot(111)
         axs.imshow(image, interpolation='none')
+        self.shown_image = image
         self.image_canvas.draw()
         
 
