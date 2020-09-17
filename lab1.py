@@ -7,6 +7,28 @@ from PyQt5.QtWidgets import QListWidget
 
 
 
+
+        # self.myListWidget1 = QListWidget()
+        # self.myListWidget2 = QListWidget()
+        # self.myListWidget1.setAcceptDrops(True)
+        # self.myListWidget1.setDragEnabled(True)
+        # self.myListWidget2.setAcceptDrops(True)
+        # self.myListWidget2.setDragEnabled(True)
+        # self.setGeometry(300, 350, 500, 300)
+        # self.myLayout = QHBoxLayout()
+        # self.myLayout.addWidget(self.myListWidget1)
+        # self.myLayout.addWidget(self.myListWidget2)
+
+        # l1 = QListWidgetItem('Hello')
+        # l1.setCheckState(Qt.Checked)
+
+        # self.myListWidget1.insertItem(1, l1)
+
+        # self.setWindowTitle('Drag and Drop Example')
+        # self.setLayout(self.myLayout)
+        # self.show()
+
+
 class ImageViewer(object):
     def __init__(self, image, ax):
         self.rgb_image = image.get_array().astype(np.float32)
