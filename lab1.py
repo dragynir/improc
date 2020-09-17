@@ -31,13 +31,9 @@ from PyQt5.QtWidgets import QListWidget
 
 class ImageViewer(object):
     def __init__(self, image, ax):
-        self.rgb_image = image.get_array().astype(np.float32)
+        self.rgb_image = image
         self.ax = ax
-        self.norm_rgb = self.rgb_image / 255
-        self.__prepare_hsv_image()
-        self.__prepare_xyz_image()
-        self.__prepare_cieLab()
-        self.__show_hist()
+        
 
 
     def __prepare_hsv_image(self):
