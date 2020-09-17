@@ -144,8 +144,12 @@ class Window(QWidget):
         x, y = mouse_event.xdata, mouse_event.ydata
 
         r, g, b = map(int, self.shown_image[int(y), int(x)])
-            
+        h, s, v = T.rgb_to_hsv((r, g, b))
+        L, la, lb = T.rgb_to_cielab((r, g, b))
+
         self.rgb_label.setText(ColorsFormats.RGB.format(r, g, b))
+        self.hsv_label.setText(ColorsFormats.HSV.format(h, s, v))
+        self.lab_label.setText(ColorsFormats.LAB.format(L, la, lb))
 
     def on_image_hsv_change(self, value):
         h = self.hue_slider.value()
