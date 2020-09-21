@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
+import tensorflow_probability as tfp
 
 
 
@@ -15,10 +16,24 @@ class Transforms(object):
                         [0.4124564, 0.3575761, 0.1804375],
                         [0.2126729, 0.7151522, 0.0721750],
                         [0.0193339, 0.1191920, 0.9503041]
-                        ])
+    ])
+
     CIELAB_Xn = 95.04
     CIELAB_Yn = 100.0
     CIELAB_Zn = 108.8
+
+
+    Sobel_Gx = np.array([
+                        [[-1], [0], [1]],
+                        [[-2], [0], [2]],
+                        [[-1], [0], [1]]
+    ])
+
+    Sobel_Gy = np.array([
+                        [[-1], [-2], [-1]],
+                        [[0], [0], [0]],
+                        [[1], [2], [1]]
+    ])
 
 
     @staticmethod
@@ -86,8 +101,6 @@ class Transforms(object):
         return int(L), round(a, 3), round(b, 3)
 
 
-
-
     @staticmethod
     def rgb_to_hsv(pixel):
         pixel = np.array(pixel) / 255
@@ -116,12 +129,67 @@ class Transforms(object):
 
         return int(hue), int(saturation), int(value)       
 
+    @staticmethod
+    def sobel_filter(image):
+        image = tf.cast(image, tf.float32)
+        r, g, b = tf.split(image, num_or_size_splits=3, axis=-1)
+        gray = 0.299 * r + 0.587 * g + 0.114 * b
+
+        gray = tf.expand_dims(gray, axis=0)
+
+        gxf = tf.expand_dims(tf.constant(Transforms.Sobel_Gx, dtype=tf.float32), axis=2)
+        gyf = tf.expand_dims(tf.constant(Transforms.Sobel_Gy, dtype=tf.float32), axis=2)
+
+        gx = tf.nn.conv2d(gray, gxf, strides=[1, 1, 1, 1], padding='SAME')
+
+        gy = tf.nn.conv2d(gray, gyf, strides=[1, 1, 1, 1], padding='SAME')
+
+        grad = tf.math.sqrt(tf.math.square(gx) + tf.math.square(gy))
+
+        return tf.squeeze(tf.cast(tf.repeat(grad, 3, axis=-1), tf.uint8))
+
+    
+    @staticmethod
+    def gaussian_kernel(size: int, std: float):
+         
+        d = tfp.distributions.Normal(0.0, std)
+
+        vals = d.prob(tf.range(start = -size, limit = size + 1, dtype = tf.float32))
+
+        gauss_kernel = tf.einsum('i,j->ij', vals, vals)
+
+        return gauss_kernel / tf.reduce_sum(gauss_kernel)
+
+
+    @staticmethod
+    def gaussian_filter(image, std):
+
+        image = tf.cast(image, tf.float32)
+
+        image = tf.expand_dims(image, axis=0)
+
+        r, g, b = tf.split(image, num_or_size_splits=3, axis=-1)
+
+        gauss_kernel = Transforms.gaussian_kernel(3, std)
+
+        gauss_kernel = gauss_kernel[:, :, tf.newaxis, tf.newaxis]
+
+        r = tf.nn.conv2d(r, gauss_kernel, strides=[1, 1, 1, 1], padding="SAME")
+        g = tf.nn.conv2d(g, gauss_kernel, strides=[1, 1, 1, 1], padding="SAME")
+        b = tf.nn.conv2d(b, gauss_kernel, strides=[1, 1, 1, 1], padding="SAME")
+
+        image = tf.concat([r, g, b], axis=-1)
+
+        return tf.squeeze(tf.cast(image, tf.uint8))
+
 
 if __name__ == '__main__':
-    image = np.array(Image.open('res\\niceimage.jpg'))
-    im_tr = Transforms.transform_hsv(image, 0, 1.3, 1.5)
+    image = np.array(Image.open('res\\shrek.png'))
 
+    image = image[:,:,:3]
 
+    im_tr = Transforms.gaussian_filter(image, 7.0)
+    
     fig, ax = plt.subplots(1, 2, figsize=(14, 14))
     ax[0].imshow(image)
     ax[1].imshow(im_tr.numpy())

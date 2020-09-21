@@ -31,7 +31,7 @@ class Window(QWidget):
         self.root_layout.addLayout(self.view_layout, stretch=65)
         self.root_layout.addLayout(self.control_view, stretch=35)
 
-        self.setWindowTitle('Drag and Drop Example')
+        self.setWindowTitle('ImgProc')
         self.setLayout(self.root_layout)
         self.show()
 
@@ -69,6 +69,9 @@ class Window(QWidget):
 
         s3, self.value_slider_label, self.value_slider = \
                 self.build_labeled_slider('V: ', 0, 100, 50)
+        
+        # s4, self.   
+        
 
         self.hue_slider.valueChanged[int].connect(self.on_image_hsv_change)
         self.saturation_slider.valueChanged[int].connect(self.on_image_hsv_change)
@@ -90,31 +93,39 @@ class Window(QWidget):
         self.operations_list_widget = QListWidget()
         self.operations_list_widget.setDragEnabled(True)
 
-        l1 = QListWidgetItem('Hello')
-        l1.setCheckState(Qt.Unchecked)
+        l1 = QListWidgetItem('Sobel')
+        l1.setCheckState(Qt.Checked)
         self.operations_list_widget.insertItem(1, l1)
+        
 
         h_layout.addLayout(v_layout, stretch=50)
         h_layout.addWidget(self.operations_list_widget, stretch=50)
-        l1 = QListWidgetItem('Hello')
-
 
         h_pipeline = QHBoxLayout()
         buttons_layout = QVBoxLayout()
         buttons_layout.setAlignment(Qt.AlignTop)
         
         self.run_button = QPushButton('run')
+        self.run_button.clicked.connect(self.run_pipeline)
         self.open_image_button = QPushButton('open')
         self.open_image_button.clicked.connect(self.open_image)
         self.clear_pipeline_button = QPushButton('clear')
+        self.reset_image_button = QPushButton('reset')
+        self.reset_image_button.clicked.connect(self.reset_image)
+
+
+        self.clear_pipeline_button.clicked.connect(self.clear_pipeline)
+
         buttons_layout.addWidget(self.run_button, stretch=5)
         buttons_layout.addWidget(self.clear_pipeline_button, stretch=5)
+        buttons_layout.addWidget(self.reset_image_button, stretch=5)
         buttons_layout.addWidget(self.open_image_button, stretch=5)
 
 
         self.pipeline_operations_widget = QListWidget()
         self.pipeline_operations_widget.setAcceptDrops(True)
         self.pipeline_operations_widget.setDragEnabled(True)
+        self.pipeline_operations_widget.itemClicked.connect(self.pipeline_item_clicked)
 
         h_pipeline.addWidget(self.pipeline_operations_widget)
         h_pipeline.addLayout(buttons_layout)
@@ -123,7 +134,24 @@ class Window(QWidget):
         control_view.addLayout(h_pipeline, stretch=70)
 
         return control_view
+
+    def reset_image(self):
+        self.show_image(self.image)
+
+    def clear_pipeline(self):
+        self.pipeline_operations_widget.clear()
     
+    def run_pipeline(self):
+        for index in range(self.pipeline_operations_widget.count()):
+            item = self.pipeline_operations_widget.item(index)
+            if item.checkState() == Qt.Checked:
+                if item.text() == 'Sobel':
+                    self.show_image(T.sobel_filter(self.shown_image).numpy())
+                
+
+    def pipeline_item_clicked(self, item):
+        pass
+
     def build_view_layout(self):
         self.image_figure = Figure()
         self.image_canvas = FigureCanvas(self.image_figure)
@@ -155,6 +183,8 @@ class Window(QWidget):
     # TODO check for image channels (must be 3)
     def load_image(self, path):
         self.image = np.array(Image.open(path))
+        if self.image.shape[-1] == 4:
+            self.image = self.image[:,:,:3]
     
     def mouse_moved_on_image(self, mouse_event):
         if not mouse_event.inaxes:
