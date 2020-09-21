@@ -69,9 +69,6 @@ class Window(QWidget):
 
         s3, self.value_slider_label, self.value_slider = \
                 self.build_labeled_slider('V: ', 0, 100, 50)
-        
-        # s4, self.   
-        
 
         self.hue_slider.valueChanged[int].connect(self.on_image_hsv_change)
         self.saturation_slider.valueChanged[int].connect(self.on_image_hsv_change)

@@ -129,11 +129,19 @@ class Transforms(object):
 
         return int(hue), int(saturation), int(value)       
 
+
     @staticmethod
-    def sobel_filter(image):
-        image = tf.cast(image, tf.float32)
+    def rgb_to_gray(image):
         r, g, b = tf.split(image, num_or_size_splits=3, axis=-1)
         gray = 0.299 * r + 0.587 * g + 0.114 * b
+        return gray
+
+
+    @staticmethod
+    def sobel_filter(image):    
+        image = tf.cast(image, tf.float32)
+        
+        gray = Transforms.rgb_to_gray(image)
 
         gray = tf.expand_dims(gray, axis=0)
 
@@ -162,7 +170,7 @@ class Transforms(object):
 
 
     @staticmethod
-    def gaussian_filter(image, std):
+    def gaussian_filter(image, std, size):
 
         image = tf.cast(image, tf.float32)
 
@@ -170,7 +178,7 @@ class Transforms(object):
 
         r, g, b = tf.split(image, num_or_size_splits=3, axis=-1)
 
-        gauss_kernel = Transforms.gaussian_kernel(3, std)
+        gauss_kernel = Transforms.gaussian_kernel((size - 1)//2, std)
 
         gauss_kernel = gauss_kernel[:, :, tf.newaxis, tf.newaxis]
 
@@ -182,13 +190,52 @@ class Transforms(object):
 
         return tf.squeeze(tf.cast(image, tf.uint8))
 
+    
+    @staticmethod
+    def otcy_binarization(image):
+
+        image = tf.cast(image, tf.float32)
+
+        gray = Transforms.rgb_to_gray(image)
+
+        gray = tf.cast(gray, tf.int32)
+
+        min_v = tf.math.reduce_min(gray)
+        max_v = tf.math.reduce_max(gray)
+
+        hist_size = max_v - min_v + 1
+        hist = tf.histogram_fixed_width(
+                gray, [min_v, max_v], nbins=hist_size, dtype=tf.int32, name=None
+        )
+
+        ind = tf.range(hist_size, dtype=tf.float32)
+        hist = tf.cast(hist, dtype=tf.float32)
+
+        n = tf.math.reduce_sum(hist)
+        m = tf.math.reduce_sum(hist * ind)
+
+        alpha1 = tf.math.cumsum(hist * ind) 
+        beta1 = tf.math.cumsum(hist)
+
+        w1 = beta1 / n
+        a = (alpha1 / beta1) - (tf.repeat(m, hist_size) - alpha1) / (tf.repeat(n, hist_size) - beta1)
+        sigma = w1 * (1 - w1) * a * a
+
+        treshold = min_v + tf.cast(tf.math.argmax(sigma), tf.int32)
+
+        r = tf.cast(gray > treshold, tf.uint8) * tf.constant(255, dtype=tf.uint8)
+
+        return tf.repeat(r, 3, axis=-1)
+
 
 if __name__ == '__main__':
     image = np.array(Image.open('res\\shrek.png'))
 
     image = image[:,:,:3]
 
-    im_tr = Transforms.gaussian_filter(image, 7.0)
+    im_tr = Transforms.otcy_binarization(image)
+
+    # im_tr = Transforms.gaussian_filter(image, 7.0, 7)
     
     fig, ax = plt.subplots(1, 2, figsize=(14, 14))
     ax[0].imshow(image)
