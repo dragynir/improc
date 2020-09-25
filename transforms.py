@@ -178,6 +178,54 @@ class Transforms(object):
 
         return tf.squeeze(tf.cast(tf.repeat(grad, 3, axis=-1), tf.uint8))
 
+
+    @staticmethod
+    def gabor_kernal(ksize, sigma, theta, lambd, gamma, psi):
+
+        sigma_x = sigma
+        sigma_y = sigma / gamma
+
+        c, s = np.cos(theta), np.sin(theta)
+
+        xmax = ksize[1] // 2
+        ymax = ksize[0] // 2
+        xmin = -xmax
+        ymin = -ymax
+
+        kernel = np.zeros([ymax - ymin + 1, xmax - xmin + 1])
+
+        ex = -0.5 / sigma_x ** 2
+        ey = -0.5 / sigma_y ** 2
+
+        cscale = np.pi * 2 / lambd
+
+        for iy, ix in np.ndindex(kernel.shape):
+            xr = ix * c + iy * s
+            yr = -ix * s + iy * c
+            v = cscale * np.exp(ex * xr * xr + ey * yr * yr) * np.cos(cscale * xr + psi)
+            kernel[iy, ix] = v
+
+        return kernel
+
+    @staticmethod
+    def gabor_filter(image):
+        
+        image = tf.cast(image, tf.float32)
+
+        gray = Transforms.rgb_to_gray(image)
+        gray = tf.expand_dims(gray, axis=0)
+
+
+        gabor_kernel = Transforms.gabor_kernal(ksize=(7, 7), sigma=0.56 * 2,
+                        theta=0.45, lambd=2, gamma=0.1, psi=0)
+                
+        gabor_kernel = gabor_kernel[:, :, tf.newaxis, tf.newaxis]
+
+        filt = tf.nn.conv2d(gray, gabor_kernel, strides=[1, 1, 1, 1], padding="SAME")
+
+        return tf.squeeze(filt)
+
+
     
     @staticmethod
     def gaussian_kernel(size: int, std: float):
@@ -189,6 +237,8 @@ class Transforms(object):
         gauss_kernel = tf.einsum('i,j->ij', vals, vals)
 
         return gauss_kernel / tf.reduce_sum(gauss_kernel)
+
+
 
 
     @staticmethod
@@ -251,18 +301,13 @@ class Transforms(object):
 
 
 if __name__ == '__main__':
-    image = np.array(Image.open('res\\shrek.png'))
+    image = np.array(Image.open('res\\elephant.jpg'))
 
     image = image[:,:,:3]
 
-    L = Transforms.cielab_L_hist(image).numpy()
-
-    # im_tr = Transforms.gaussian_filter(image, 7.0, 7)
+    im_tr = Transforms.gabor_filter(image)
     
     fig, ax = plt.subplots(1, 2, figsize=(14, 14))
     ax[0].imshow(image)
-
-    ax[1].hist(L.flatten(), bins=100)
-
-    # ax[1].imshow(im_tr.numpy())
+    ax[1].imshow(im_tr.numpy())
     plt.show()
