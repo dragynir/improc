@@ -36,10 +36,14 @@ class Window(QWidget):
         self.show()
 
 
-    def build_labeled_slider(self, text, min, max, init_value):
+    def build_labeled_slider(self, text, min, max, init_value, c_slider=None):
         h_layout = QHBoxLayout()
 
-        slider = QSlider(orientation=Qt.Horizontal)
+        if c_slider is not None:
+            slider = c_slider
+        else:
+            slider = QSlider(orientation=Qt.Horizontal)
+        
         slider.setRange(min, max)
         slider.setValue(init_value)
         label = QLabel(text)
@@ -70,14 +74,23 @@ class Window(QWidget):
         s3, self.value_slider_label, self.value_slider = \
                 self.build_labeled_slider('V: ', 0, 100, 50)
 
+        s4, self.sigma_slider_label, self.sigma_slider = self.build_labeled_slider(
+            'SIGMA: ', 0, 20, 0)
+
+
+
         self.hue_slider.valueChanged[int].connect(self.on_image_hsv_change)
         self.saturation_slider.valueChanged[int].connect(self.on_image_hsv_change)
         self.value_slider.valueChanged[int].connect(self.on_image_hsv_change)
+        self.sigma_slider.valueChanged[int].connect(self.on_gaus_sigma_change)
 
         colors_info_layout = QVBoxLayout()
         self.rgb_label = QLabel(ColorsFormats.RGB.format(0, 0, 0))
         self.hsv_label = QLabel(ColorsFormats.HSV.format(0, 0, 0))
         self.lab_label = QLabel(ColorsFormats.LAB.format(0, 0, 0))
+        self.l_hist_button = QPushButton('Show hist')
+        self.l_hist_button.clicked.connect(self.show_hist)
+
         colors_info_layout.addWidget(self.rgb_label)
         colors_info_layout.addWidget(self.hsv_label)
         colors_info_layout.addWidget(self.lab_label)
@@ -85,14 +98,19 @@ class Window(QWidget):
         v_layout.addLayout(s1)
         v_layout.addLayout(s2)
         v_layout.addLayout(s3)
+        v_layout.addLayout(s4)
         v_layout.addLayout(colors_info_layout)
+        v_layout.addWidget(self.l_hist_button)
 
         self.operations_list_widget = QListWidget()
         self.operations_list_widget.setDragEnabled(True)
 
         l1 = QListWidgetItem('Sobel')
+        l2 = QListWidgetItem('Otsu')
         l1.setCheckState(Qt.Checked)
+        l2.setCheckState(Qt.Checked)
         self.operations_list_widget.insertItem(1, l1)
+        self.operations_list_widget.insertItem(1, l2)
         
 
         h_layout.addLayout(v_layout, stretch=50)
@@ -133,6 +151,7 @@ class Window(QWidget):
         return control_view
 
     def reset_image(self):
+        self.hsv_adjust_image = self.image
         self.show_image(self.image)
 
     def clear_pipeline(self):
@@ -144,7 +163,8 @@ class Window(QWidget):
             if item.checkState() == Qt.Checked:
                 if item.text() == 'Sobel':
                     self.show_image(T.sobel_filter(self.shown_image).numpy())
-                
+                elif item.text() == 'Otsu':
+                    self.show_image(T.otsu_binarization(self.shown_image).numpy())
 
     def pipeline_item_clicked(self, item):
         pass
@@ -180,8 +200,20 @@ class Window(QWidget):
     # TODO check for image channels (must be 3)
     def load_image(self, path):
         self.image = np.array(Image.open(path))
+        self.hsv_adjust_image = self.image
         if self.image.shape[-1] == 4:
             self.image = self.image[:,:,:3]
+
+    
+    def show_hist(self):
+
+        l_comp = T.cielab_L_component(self.shown_image).numpy()
+
+        self.hist_figure.clear()
+        axs = self.hist_figure.add_subplot(111)
+        axs.hist(l_comp.flatten(), bins=100)
+        self.hist_canvas.draw()
+
     
     def mouse_moved_on_image(self, mouse_event):
         if not mouse_event.inaxes:
@@ -197,6 +229,20 @@ class Window(QWidget):
         self.hsv_label.setText(ColorsFormats.HSV.format(h, s, v))
         self.lab_label.setText(ColorsFormats.LAB.format(L, la, lb))
 
+    def on_gaus_sigma_change(self, value):
+        val = self.sigma_slider.value()
+
+        val = (val / self.sigma_slider.maximum()) * 10
+
+        self.sigma_slider_label.setText(str(val))
+
+        if val == 0.0:
+            self.show_image(self.hsv_adjust_image)
+            return
+
+        self.show_image(T.gaussian_filter(self.hsv_adjust_image, val, 5).numpy())
+
+
     def on_image_hsv_change(self, value):
         h = self.hue_slider.value()
         s = self.saturation_slider.value()
@@ -208,7 +254,8 @@ class Window(QWidget):
 
         s = s / 100.0 + 0.5
         v = v / 100.0 + 0.5
-        self.show_image(T.transform_hsv(self.image, h, s, v).numpy())
+        self.hsv_adjust_image = T.transform_hsv(self.image, h, s, v).numpy()
+        self.show_image(self.hsv_adjust_image)
 
     def show_image(self, image):
         self.image_figure.clear()

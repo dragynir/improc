@@ -20,7 +20,7 @@ class Transforms(object):
 
     CIELAB_Xn = 95.04
     CIELAB_Yn = 100.0
-    CIELAB_Zn = 108.8
+    CIELAB_Zn = 108.88
 
 
     Sobel_Gx = np.array([
@@ -68,7 +68,6 @@ class Transforms(object):
         image = tf.concat([nr, ng, nb], axis=-1)
         image = tf.clip_by_value(image, 0.0, 255.0)
 
-        # 
 
         return tf.cast(image, tf.uint32)
 
@@ -85,11 +84,34 @@ class Transforms(object):
             return x**(1/3)
         return (1/3)*((29/6)**2) * x + 4/29
 
+
+    @staticmethod
+    def cielab_L_component(image):
+        image = tf.cast(image, tf.float32) / 255.0
+
+        image = tf.transpose(image, [2, 0, 1])
+
+        xyz = tf.tensordot(tf.cast(Transforms.XYZ_M, tf.float32), image, axes=((1), (0)))
+
+        xyz = xyz * 100.0
+
+        yd = xyz[1] / tf.cast(Transforms.CIELAB_Yn, tf.float32)
+
+        temp = (1/3)*((29/6)**2) * yd + 4/29
+
+        yf = tf.where(yd > (6/29)**3, tf.math.pow(yd, 1/3), temp)
+
+        return 116.0 * yf - 16
+
+
+
     @staticmethod
     def rgb_to_cielab(pixel):
-        pixel = np.reshape(np.array(pixel), (3, 1))
+        pixel = np.array(pixel) / 255
+        
+        pixel = np.reshape(pixel, (3, 1))
 
-        x, y, z = np.matmul(Transforms.XYZ_M, pixel).squeeze()
+        x, y, z = np.matmul(Transforms.XYZ_M, pixel).squeeze() * 100
 
         L = 116.0 * Transforms.cielab_f(y/Transforms.CIELAB_Yn) - 16
 
@@ -192,7 +214,7 @@ class Transforms(object):
 
     
     @staticmethod
-    def otcy_binarization(image):
+    def otsu_binarization(image):
 
         image = tf.cast(image, tf.float32)
 
@@ -233,11 +255,14 @@ if __name__ == '__main__':
 
     image = image[:,:,:3]
 
-    im_tr = Transforms.otcy_binarization(image)
+    L = Transforms.cielab_L_hist(image).numpy()
 
     # im_tr = Transforms.gaussian_filter(image, 7.0, 7)
     
     fig, ax = plt.subplots(1, 2, figsize=(14, 14))
     ax[0].imshow(image)
-    ax[1].imshow(im_tr.numpy())
+
+    ax[1].hist(L.flatten(), bins=100)
+
+    # ax[1].imshow(im_tr.numpy())
     plt.show()
