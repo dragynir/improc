@@ -207,8 +207,17 @@ class Transforms(object):
 
         return kernel
 
+
     @staticmethod
-    def gabor_filter(image):
+    def scale_min_max(image):
+
+        min_v = tf.math.reduce_min(image)
+        max_v = tf.math.reduce_max(image)
+
+        return (image - min_v) / (max_v - min_v)
+
+    @staticmethod
+    def gabor_filter(image, theta):
         
         image = tf.cast(image, tf.float32)
 
@@ -217,13 +226,17 @@ class Transforms(object):
 
 
         gabor_kernel = Transforms.gabor_kernal(ksize=(7, 7), sigma=0.56 * 2,
-                        theta=0.45, lambd=2, gamma=0.1, psi=0)
+                        theta=theta, lambd=2, gamma=0.1, psi=0)
                 
         gabor_kernel = gabor_kernel[:, :, tf.newaxis, tf.newaxis]
 
         filt = tf.nn.conv2d(gray, gabor_kernel, strides=[1, 1, 1, 1], padding="SAME")
 
-        return tf.squeeze(filt)
+        filt = tf.squeeze(tf.repeat(filt, 3, axis=-1))
+
+        filt = Transforms.scale_min_max(filt)
+
+        return filt
 
 
     
@@ -305,7 +318,9 @@ if __name__ == '__main__':
 
     image = image[:,:,:3]
 
-    im_tr = Transforms.gabor_filter(image)
+    im_tr = Transforms.gabor_filter(image, 45)
+
+    print(im_tr.numpy().min(), im_tr.numpy().max())
     
     fig, ax = plt.subplots(1, 2, figsize=(14, 14))
     ax[0].imshow(image)

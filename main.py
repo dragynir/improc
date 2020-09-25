@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QListWidget, QListWidgetItem
 from PyQt5.QtWidgets import QHBoxLayout, QVBoxLayout, QApplication, QWidget
-from PyQt5.QtWidgets import QLabel, QSlider, QPushButton, QFileDialog
+from PyQt5.QtWidgets import QLabel, QSlider, QPushButton, QFileDialog, QDialog
 from PyQt5.QtCore import Qt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
@@ -15,6 +15,38 @@ class ColorsFormats(object):
     RGB = 'rgb: {}, {}, {}'
     HSV = 'hsv: {}, {}, {}'
     LAB = 'lab: {}, {}, {}'
+
+
+
+class GaborDialog(QDialog):
+    def __init__(self, theta):
+        QDialog.__init__(self, None)
+
+        self.theta = theta
+
+        v_layout = QVBoxLayout()
+
+        layout, self.label, self.angle_slider = \
+                Window.build_labeled_slider('Theta: ', 0, 180, 0)
+        
+        self.angle_slider.valueChanged[int].connect(self.update)
+
+        self.angle_slider.setValue(self.theta)
+
+
+        v_layout.addLayout(layout)
+
+        confirm_button = QPushButton('confirm')
+        confirm_button.clicked.connect(self.on_confirm)
+        v_layout.addWidget(confirm_button)
+        self.setLayout(v_layout)
+    
+    def update(self, value):
+        self.label.setText(str(value))
+
+    def on_confirm(self):
+        self.theta = int(self.angle_slider.value())
+        self.close()
 
 
 class Window(QWidget):
@@ -35,8 +67,8 @@ class Window(QWidget):
         self.setLayout(self.root_layout)
         self.show()
 
-
-    def build_labeled_slider(self, text, min, max, init_value, c_slider=None):
+    @staticmethod
+    def build_labeled_slider(text, min, max, init_value, c_slider=None):
         h_layout = QHBoxLayout()
 
         if c_slider is not None:
@@ -66,17 +98,16 @@ class Window(QWidget):
         v_layout.setAlignment(Qt.AlignTop)
 
         s1, self.hue_slider_label, self.hue_slider = \
-                self.build_labeled_slider('H: ', 0, 360, 0)
+                Window.build_labeled_slider('H: ', 0, 360, 0)
 
         s2, self.saturation_slider_label, self.saturation_slider = \
-                self.build_labeled_slider('S: ', 0, 100, 50)
+                Window.build_labeled_slider('S: ', 0, 100, 50)
 
         s3, self.value_slider_label, self.value_slider = \
-                self.build_labeled_slider('V: ', 0, 100, 50)
+                Window.build_labeled_slider('V: ', 0, 100, 50)
 
-        s4, self.sigma_slider_label, self.sigma_slider = self.build_labeled_slider(
+        s4, self.sigma_slider_label, self.sigma_slider = Window.build_labeled_slider(
             'SIGMA: ', 0, 20, 0)
-
 
 
         self.hue_slider.valueChanged[int].connect(self.on_image_hsv_change)
@@ -103,14 +134,27 @@ class Window(QWidget):
         v_layout.addWidget(self.l_hist_button)
 
         self.operations_list_widget = QListWidget()
+        self.operations_list_widget.itemClicked.connect(self.pipeline_item_clicked)
         self.operations_list_widget.setDragEnabled(True)
 
         l1 = QListWidgetItem('Sobel')
-        l2 = QListWidgetItem('Otsu')
         l1.setCheckState(Qt.Checked)
+
+        l2 = QListWidgetItem('Otsu')
         l2.setCheckState(Qt.Checked)
+
+
+        l3 = QListWidgetItem('Gabor')
+        l3.setData(Qt.UserRole, {'theta': 0})
+        l3.setCheckState(Qt.Checked)
+
+        
+        
         self.operations_list_widget.insertItem(1, l1)
-        self.operations_list_widget.insertItem(1, l2)
+        self.operations_list_widget.insertItem(2, l2)
+        self.operations_list_widget.insertItem(3, l3)
+
+        
         
 
         h_layout.addLayout(v_layout, stretch=50)
@@ -140,7 +184,6 @@ class Window(QWidget):
         self.pipeline_operations_widget = QListWidget()
         self.pipeline_operations_widget.setAcceptDrops(True)
         self.pipeline_operations_widget.setDragEnabled(True)
-        self.pipeline_operations_widget.itemClicked.connect(self.pipeline_item_clicked)
 
         h_pipeline.addWidget(self.pipeline_operations_widget)
         h_pipeline.addLayout(buttons_layout)
@@ -165,9 +208,20 @@ class Window(QWidget):
                     self.show_image(T.sobel_filter(self.shown_image).numpy())
                 elif item.text() == 'Otsu':
                     self.show_image(T.otsu_binarization(self.shown_image).numpy())
+                elif item.text() == 'Gabor':
+                    self.show_image(T.gabor_filter(self.shown_image,
+                            item.data(Qt.UserRole)['theta']).numpy())
+
 
     def pipeline_item_clicked(self, item):
-        pass
+        
+        if item.text() == 'Gabor':
+            gaborDialog = GaborDialog(item.data(Qt.UserRole)['theta'])
+            gaborDialog.exec_()
+            item.setData(Qt.UserRole, {'theta': gaborDialog.theta})
+
+
+            
 
     def build_view_layout(self):
         self.image_figure = Figure()
