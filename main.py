@@ -63,6 +63,9 @@ class Window(QWidget):
         self.root_layout.addLayout(self.view_layout, stretch=65)
         self.root_layout.addLayout(self.control_view, stretch=35)
 
+
+        self.cmap = None
+
         self.setWindowTitle('ImgProc')
         self.setLayout(self.root_layout)
         self.show()
@@ -119,12 +122,15 @@ class Window(QWidget):
         self.rgb_label = QLabel(ColorsFormats.RGB.format(0, 0, 0))
         self.hsv_label = QLabel(ColorsFormats.HSV.format(0, 0, 0))
         self.lab_label = QLabel(ColorsFormats.LAB.format(0, 0, 0))
+        self.cells_count_label = QLabel('Cells found: 0')
+
         self.l_hist_button = QPushButton('Show hist')
         self.l_hist_button.clicked.connect(self.show_hist)
 
         colors_info_layout.addWidget(self.rgb_label)
         colors_info_layout.addWidget(self.hsv_label)
         colors_info_layout.addWidget(self.lab_label)
+        colors_info_layout.addWidget(self.cells_count_label)
 
         v_layout.addLayout(s1)
         v_layout.addLayout(s2)
@@ -148,11 +154,32 @@ class Window(QWidget):
         l3.setData(Qt.UserRole, {'theta': 0})
         l3.setCheckState(Qt.Checked)
 
+
+        l4 = QListWidgetItem('Canny')
+        # l4.setData(Qt.UserRole, {'min_treshold': 80}, {'max_treshold': 120})
+        l4.setCheckState(Qt.Checked)
+
+        l5 = QListWidgetItem('CompCount')
+        l5.setData(Qt.UserRole, {'ksize': 0})
+        l5.setCheckState(Qt.Checked)
+
+        l6 = QListWidgetItem('Harris') 
+        # l4.setData(Qt.UserRole, {'min_treshold': 80}, {'max_treshold': 120})
+        l6.setCheckState(Qt.Checked)
+
+        l7 = QListWidgetItem('Fertness')
+        # l4.setData(Qt.UserRole, {'min_treshold': 80}, {'max_treshold': 120})
+        l7.setCheckState(Qt.Checked)
+
         
         
         self.operations_list_widget.insertItem(1, l1)
         self.operations_list_widget.insertItem(2, l2)
         self.operations_list_widget.insertItem(3, l3)
+        self.operations_list_widget.insertItem(4, l4)
+        self.operations_list_widget.insertItem(5, l5)
+        self.operations_list_widget.insertItem(6, l6)
+        self.operations_list_widget.insertItem(7, l7)
 
         
         
@@ -201,6 +228,8 @@ class Window(QWidget):
         self.pipeline_operations_widget.clear()
     
     def run_pipeline(self):
+        self.cmap = None
+
         for index in range(self.pipeline_operations_widget.count()):
             item = self.pipeline_operations_widget.item(index)
             if item.checkState() == Qt.Checked:
@@ -211,6 +240,17 @@ class Window(QWidget):
                 elif item.text() == 'Gabor':
                     self.show_image(T.gabor_filter(self.shown_image,
                             item.data(Qt.UserRole)['theta']).numpy())
+                elif item.text() == 'Canny':
+                    self.show_image(T.canny_edge_detection(self.shown_image).numpy())
+                elif item.text() == 'CompCount':
+                    self.cmap = 'YlGnBu'
+                    count, img = T.components_count(self.shown_image, dilate_ksize=3, erode_ksize=7)
+                    self.cells_count_label.setText(f'Cells found: {count}')
+                    self.show_image(img.numpy())
+                elif item.text() == 'Fertness':
+                    self.show_image(T.local_features_detection(self.shown_image, fertness=True))
+                elif item.text() == 'Harris':
+                    self.show_image(T.local_features_detection(self.shown_image, fertness=False))
 
 
     def pipeline_item_clicked(self, item):
@@ -219,9 +259,7 @@ class Window(QWidget):
             gaborDialog = GaborDialog(item.data(Qt.UserRole)['theta'])
             gaborDialog.exec_()
             item.setData(Qt.UserRole, {'theta': gaborDialog.theta})
-
-
-            
+          
 
     def build_view_layout(self):
         self.image_figure = Figure()
@@ -254,9 +292,8 @@ class Window(QWidget):
     # TODO check for image channels (must be 3)
     def load_image(self, path):
         self.image = np.array(Image.open(path))
-        self.hsv_adjust_image = self.image
-        if self.image.shape[-1] == 4:
-            self.image = self.image[:,:,:3]
+        self.hsv_adjust_image = self.image[:,:,:3]
+        self.image = self.image[:,:,:3]
 
     
     def show_hist(self):

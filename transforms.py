@@ -3,7 +3,8 @@ import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
 import tensorflow_probability as tfp
-
+import scipy
+from scipy import ndimage, signal
 
 
 
@@ -36,6 +37,7 @@ class Transforms(object):
     ])
 
 
+
     @staticmethod
     def transform_hsv(image, h, s, v):
         '''
@@ -44,6 +46,7 @@ class Transforms(object):
             s - scalar from 1.0
             v - scalar from 1.0 
         '''
+        
         image = tf.cast(image, tf.float32)
         r, g, b = tf.split(image, num_or_size_splits=3, axis=-1)
 
@@ -160,7 +163,7 @@ class Transforms(object):
 
 
     @staticmethod
-    def sobel_filter(image):    
+    def sobel_filter(image, return_angles=False, return_dx_dy=False):    
         image = tf.cast(image, tf.float32)
         
         gray = Transforms.rgb_to_gray(image)
@@ -174,9 +177,138 @@ class Transforms(object):
 
         gy = tf.nn.conv2d(gray, gyf, strides=[1, 1, 1, 1], padding='SAME')
 
+        if return_dx_dy:
+            return gx.numpy().squeeze(), gy.numpy().squeeze()
+
+        angles = tf.math.atan2(gy, gx)
+
         grad = tf.math.sqrt(tf.math.square(gx) + tf.math.square(gy))
 
+        if return_angles:
+            return tf.squeeze(tf.cast(grad, tf.uint8)), tf.squeeze(angles)
+
         return tf.squeeze(tf.cast(tf.repeat(grad, 3, axis=-1), tf.uint8))
+
+
+    
+    @staticmethod
+    def local_features_detection(image, k=0.04, fertness=False):
+        
+        Ix, Iy = Transforms.sobel_filter(image, return_dx_dy=True)
+
+        ixy = Ix * Iy
+        ix2 = Ix * Ix
+        iy2 = Iy * Iy
+
+        ix2 = ndimage.gaussian_filter(ix2, sigma=2)
+        iy2 = ndimage.gaussian_filter(iy2, sigma=2)
+        ixy = ndimage.gaussian_filter(ixy, sigma=2)
+
+        l, c = ixy.shape
+
+        result = np.zeros((l, c))
+        r = np.zeros((l, c))
+
+        rmax = 0
+
+        for i in range(l):
+            for j in range(c):
+                m = np.array([[ix2[i, j], ixy[i, j]], [ixy[i, j], iy2[i, j]]])
+                detM = np.linalg.det(m)
+                trM = np.trace(m)
+
+                if fertness:
+                    r[i, j] = detM / trM
+                else:
+                    r[i, j] = detM - k * np.power(trM, 2)
+
+                if r[i, j] > rmax:
+                    rmax = r[i, j]
+
+        # non max suppresion
+        for i in range(l - 1):
+            for j in range(c - 1):
+                if r[i, j] > 0.01 * rmax and r[i, j] > r[i - 1, j - 1] and r[i, j] > r[i - 1, j + 1] \
+                        and r[i, j] > r[i + 1, j - 1] and r[i, j] > r[i + 1, j + 1]:
+                    result[i, j] = 1
+
+        result = Transforms.dilate(result[:, :, None], ksize=7)
+        image = image.copy()
+
+        # image[:, :, 0] = image[:, :, 0] + result * 40
+        # image[:, :, 1] = image[:, :, 1] + result * 40
+
+        image[:, :, 2][result > 0] = 245
+
+        return image
+
+
+
+    @staticmethod
+    def canny_edge_detection(image, low_treshold=80, high_treshold=150):
+
+        grad, angles = Transforms.sobel_filter(image, return_angles=True)
+
+        M, N = grad.shape
+        Z = tf.zeros_like(grad, dtype=tf.int32).numpy()
+
+        angles = angles * 180. / np.pi
+
+        angles = angles.numpy()
+        grad = grad.numpy()
+        angles[angles < 0] += 180
+
+        for i in range(1, M-1):
+            for j in range(1, N-1):
+                q = 255
+                r = 255
+                #angle 0
+                if (0 <= angles[i,j] < 22.5) or (157.5 <= angles[i,j] <= 180):
+                    q = grad[i, j+1]
+                    r = grad[i, j-1]
+                #angle 45
+                elif (22.5 <= angles[i,j] < 67.5):
+                    q = grad[i+1, j-1]
+                    r = grad[i-1, j+1]
+                #angle 90
+                elif (67.5 <= angles[i,j] < 112.5):
+                    q = grad[i+1, j]
+                    r = grad[i-1, j]
+                #angle 135
+                elif (112.5 <= angles[i,j] < 157.5):
+                    q = grad[i-1, j-1]
+                    r = grad[i+1, j+1]
+
+                if (grad[i,j] >= q) and (grad[i,j] >= r):
+                    Z[i,j] = grad[i,j]
+                else:
+                    Z[i,j] = 0
+
+        
+        Z = tf.constant(Z)
+
+        high = tf.zeros_like(Z)
+        middle = tf.zeros_like(Z)
+
+
+        high = tf.where(Z > high_treshold, 255, high)
+        middle_mask = tf.math.logical_and(Z < high_treshold , Z > low_treshold)
+        middle = tf.where(middle_mask, 25, middle)
+
+        double_treshold = high + middle
+
+        kernel = tf.ones([3, 3, 1, 1], tf.int32)
+
+        double_treshold = double_treshold[tf.newaxis, :, :, tf.newaxis]
+
+        filt = tf.nn.conv2d(double_treshold, kernel, strides=[1, 1, 1, 1], padding="SAME")
+
+        result = tf.zeros_like(double_treshold)
+
+        result = tf.where(filt > 225, 255, result)
+
+        return tf.squeeze(tf.repeat(tf.cast(result, tf.uint8), 3, axis=-1))
+
 
 
     @staticmethod
@@ -236,6 +368,8 @@ class Transforms(object):
 
         filt = Transforms.scale_min_max(filt)
 
+        print(tf.math.reduce_min(filt), tf.math.reduce_max(filt))
+
         return filt
 
 
@@ -274,6 +408,128 @@ class Transforms(object):
         image = tf.concat([r, g, b], axis=-1)
 
         return tf.squeeze(tf.cast(image, tf.uint8))
+
+
+    # TODO fix
+    @staticmethod
+    def dilate(binary_image, ksize=3):
+
+        binary_image = tf.cast(binary_image, dtype=tf.float32)
+
+        kernel = tf.ones((ksize, ksize), dtype=tf.float32)
+
+        kernel = kernel[:, :, tf.newaxis, tf.newaxis]
+
+        binary_image = tf.expand_dims(binary_image, axis=0)
+
+        tf.print(tf.shape(binary_image))
+
+        conv_image = tf.nn.conv2d(binary_image, kernel, strides=[1, 1, 1, 1], padding="SAME")
+
+        dilate_image = tf.where(conv_image >= 1, tf.ones_like(binary_image), 0)
+
+        return tf.squeeze(dilate_image)
+
+    @staticmethod
+    def erode(binary_image, ksize=3):
+
+        binary_image = tf.cast(binary_image, tf.float32)
+
+        kernel = tf.ones((ksize, ksize), dtype=tf.float32)
+
+        kernel = kernel[:, :, tf.newaxis, tf.newaxis]
+
+        binary_image = tf.expand_dims(binary_image, axis=0)
+
+        tf.print(tf.shape(binary_image))
+
+        conv_image = tf.nn.conv2d(binary_image, kernel, strides=[1, 1, 1, 1], padding="SAME")
+
+        erode_image = tf.where(conv_image == ksize * ksize, tf.ones_like(binary_image), 0)
+
+        return tf.squeeze(erode_image)
+
+    
+
+    @staticmethod 
+    def components_count(image, dilate_ksize=3, erode_ksize=3):
+        # TODO remove small cells, select params
+
+        binary_3c = Transforms.otsu_binarization(image) // 255
+
+        binary = tf.slice(binary_3c, [0, 0, 0], [-1, -1, 1])
+
+        binary = tf.cast(binary, dtype=tf.float32)
+
+        binary = tf.math.logical_not(tf.cast(tf.cast(binary, tf.int32), tf.bool))
+        
+        # binary = tf.pad(binary, [[32, 32], [32, 32], [0, 0]], "CONSTANT")
+        
+        binary = Transforms.dilate(binary, ksize=3)
+
+        binary = binary[:, :, tf.newaxis]
+
+        binary = Transforms.erode(binary, ksize=7)
+
+        binary = tf.cast(binary, tf.float32).numpy()
+
+        M, N = binary.shape
+
+        km = 0
+        kn = 0
+        cur = 1
+        
+        for i in range(1, M-1):
+            for j in range(1, N-1):
+
+                kn = j - 1
+
+                if kn <= 0:
+                    kn = 1
+                    B = 0
+                else:
+                    B = binary[i, kn]
+
+                km = i - 1
+                if km <= 0:
+                    km = 1
+                    C = 0
+                else:
+                    C = binary[km, j]
+                
+                A = binary[i, j]
+
+                if A == 0:
+                    pass
+                elif B == 0 and C == 0:
+                    cur  = cur + 1
+                    binary[i, j] = cur
+                elif B != 0 and C == 0:
+                    binary[i, j] = B
+                elif B == 0 and C != 0:
+                    binary[i, j] = C
+                elif B != 0 and C != 0:
+                    if B == C:
+                        binary[i, j] = B
+                    else:
+                        binary[i, j] = B
+
+                        binary[binary == C] = B  
+
+
+        u_values = np.unique(binary)
+
+        for i, v in enumerate(u_values):
+            binary[binary == v] = i * 5
+                  
+        img = np.repeat(binary[..., None], 3, axis=-1)
+
+        max_v = img.max()
+
+        img[:, :, 1] = np.mod((img[:, :, 0] + 140), max_v)
+
+        return len(u_values), tf.cast(img * 255, tf.uint8)
+        # return 1, binary
 
     
     @staticmethod
@@ -314,15 +570,16 @@ class Transforms(object):
 
 
 if __name__ == '__main__':
-    image = np.array(Image.open('res\\elephant.jpg'))
 
-    image = image[:,:,:3]
+    image = np.array(Image.open('res\cells.jpg'))
 
-    im_tr = Transforms.gabor_filter(image, 45)
+    image = image[:,:,:3]  
 
-    print(im_tr.numpy().min(), im_tr.numpy().max())
-    
+    count, im_tr = Transforms.components_count(image, dilate_ksize=3, erode_ksize=5)
+
     fig, ax = plt.subplots(1, 2, figsize=(14, 14))
+
     ax[0].imshow(image)
-    ax[1].imshow(im_tr.numpy())
+
+    ax[1].imshow(im_tr)
     plt.show()
