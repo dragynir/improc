@@ -386,8 +386,6 @@ class Transforms(object):
         return gauss_kernel / tf.reduce_sum(gauss_kernel)
 
 
-
-
     @staticmethod
     def gaussian_filter(image, std, size):
 
