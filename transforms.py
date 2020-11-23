@@ -238,7 +238,9 @@ class Transforms(object):
         # image[:, :, 0] = image[:, :, 0] + result * 40
         # image[:, :, 1] = image[:, :, 1] + result * 40
 
-        image[:, :, 2][result > 0] = 245
+        image[:, :, 0][result > 0] = 255
+        image[:, :, 1][result > 0] = 255
+        image[:, :, 1][result > 0] = 0
 
         return image
 
@@ -517,8 +519,101 @@ class Transforms(object):
 
         u_values = np.unique(binary)
 
+        def find_box(component):
+
+            h, w = component.shape
+
+            fl = (component.flatten() != 0).nonzero()[0]
+
+            left_ind = fl[0]
+            right_ind = fl[-1]
+
+            top_left = (left_ind // w, left_ind % w)
+            down_right = (right_ind // w, right_ind % w)
+
+            return top_left, down_right
+        
+        def find_centers(mask, square):
+            h, w = mask.shape
+            sh = 0
+            sw = 0
+            for i in range(h):
+                for j in range(w):
+                    sh+=(i * mask[i, j])
+                    sw+=(j * mask[i, j])
+            return sh/square, sw/square
+
+        
+        def compute_m(mask, ch, cw, mode):
+            h, w = mask.shape
+            m = 0
+            for i in range(h):
+                for j in range(w):
+                    if mode == 1:
+                        m+=((j - cw) ** 2) * mask[i, j]
+                    elif mode == 2:
+                        m+=((i - ch) ** 2) * mask[i, j]
+                    else:
+                        m+=((i - ch) * (j - cw) * mask[i, j])
+
+            return m
+
+        def find_elongation(mask, ch, cw):
+            m20 = compute_m(mask, ch, cw, 1)
+            m02 = compute_m(mask, ch, cw, 2)
+            m11 = compute_m(mask, ch, cw, 3)
+
+            sq = np.sqrt((m20 - m02) ** 2 + 4 * m11 ** 2)
+            numerator = m20 + m02 + sq
+            denominator = m20 + m02 - sq
+            if denominator == 0:
+                return 1000
+            return numerator/denominator
+
+
+
+        def find_cell(component):
+
+            square = np.count_nonzero(component)
+            
+            top_left, down_right = find_box(component)
+            
+            mask = component[top_left[0]:top_left[1], down_right[0]:down_right[1]]
+            hc, hw = find_centers(mask, square)
+
+            elongation = find_elongation(mask, hc, hw)
+
+            count = 0
+
+            if square < 50:
+                count =  0
+
+            count = 1
+
+            return elongation, count
+
+        
+        cells_count = 0
+
+        all_el = []
         for i, v in enumerate(u_values):
+
+            component = binary == v
+
+            elongation, count = find_cell(component)
+            all_el.append(elongation)
+
+            cells_count+=count
+
             binary[binary == v] = i * 5
+
+        all_el = np.array(all_el)
+        all_el = all_el[all_el < 1000]
+        
+        plt.figure()
+        plt.hist(all_el, bins=100)
+
+        print(np.mean(all_el))
                   
         img = np.repeat(binary[..., None], 3, axis=-1)
 
@@ -526,9 +621,7 @@ class Transforms(object):
 
         img[:, :, 1] = np.mod((img[:, :, 0] + 140), max_v)
 
-        return len(u_values), tf.cast(img * 255, tf.uint8)
-        # return 1, binary
-
+        return cells_count, tf.cast(img * 255, tf.uint8)
     
     @staticmethod
     def otsu_binarization(image):
@@ -574,6 +667,8 @@ if __name__ == '__main__':
     image = image[:,:,:3]  
 
     count, im_tr = Transforms.components_count(image, dilate_ksize=3, erode_ksize=5)
+
+    print(count)
 
     fig, ax = plt.subplots(1, 2, figsize=(14, 14))
 
