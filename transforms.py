@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import tensorflow_probability as tfp
 import scipy
 from scipy import ndimage, signal
-
+import cv2
 
 
 class Transforms(object):
@@ -422,7 +422,7 @@ class Transforms(object):
 
         binary_image = tf.expand_dims(binary_image, axis=0)
 
-        tf.print(tf.shape(binary_image))
+        # tf.print(tf.shape(binary_image))
 
         conv_image = tf.nn.conv2d(binary_image, kernel, strides=[1, 1, 1, 1], padding="SAME")
 
@@ -441,7 +441,7 @@ class Transforms(object):
 
         binary_image = tf.expand_dims(binary_image, axis=0)
 
-        tf.print(tf.shape(binary_image))
+        # tf.print(tf.shape(binary_image))
 
         conv_image = tf.nn.conv2d(binary_image, kernel, strides=[1, 1, 1, 1], padding="SAME")
 
@@ -519,19 +519,18 @@ class Transforms(object):
 
         u_values = np.unique(binary)
 
+        def get_bound(border):
+            nzero = np.nonzero(border)
+            return np.min(nzero), np.max(nzero)
+
         def find_box(component):
+            h_border = np.argmax(component, axis=1)
+            w_border = np.argmax(component, axis=0)
 
-            h, w = component.shape
+            h_min, h_max = get_bound(h_border)
+            w_min, w_max = get_bound(w_border)
 
-            fl = (component.flatten() != 0).nonzero()[0]
-
-            left_ind = fl[0]
-            right_ind = fl[-1]
-
-            top_left = (left_ind // w, left_ind % w)
-            down_right = (right_ind // w + 1, right_ind % w + 1)
-
-            return top_left, down_right
+            return (h_min, w_min), (h_max + 1, w_max + 1)
         
         def find_centers(mask, square):
             h, w = mask.shape
@@ -578,10 +577,32 @@ class Transforms(object):
             pad_v = 5
 
             mask = np.pad(mask, (pad_v, pad_v))
+            
 
-            mask = Transforms.dilate(mask[..., None], ksize=7)
+            kernel_dil = np.ones((5, 5), dtype=np.float32)
+            kernel_er = np.ones((3, 3), dtype=np.float32)
 
-            mask = Transforms.erode(mask[:, :, tf.newaxis], ksize=3).numpy()
+            # mask = np.logical_not(mask)
+            # mask = mask.astype(np.float32)
+            # for i in range(3):
+            #     mask = cv2.dilate(mask, kernel_dil)
+
+            # mask = cv2.erode(mask, kernel_er)
+
+            for i in range(3):
+                 mask = Transforms.dilate(mask[..., None], ksize=3)
+                #  mask = Transforms.erode(mask[..., None], ksize=5)
+
+            # mask = Transforms.erode(mask[..., None], ksize=5)
+            mask = mask.numpy()
+
+            # mask = Transforms.dilate(mask[..., None], ksize=7)
+            # mask = Transforms.dilate(mask[:, :, tf.newaxis], ksize=15)
+            # mask = Transforms.dilate(mask[:, :, tf.newaxis], ksize=15)
+            # mask = Transforms.dilate(mask[:, :, tf.newaxis], ksize=15)
+            # mask = Transforms.erode(mask[:, :, tf.newaxis], ksize=3).numpy()
+
+
 
             mask = mask[pad_v:-pad_v, pad_v:-pad_v]            
 
@@ -623,8 +644,8 @@ class Transforms(object):
 
             count = 1
 
-            # elif elongation > 3:
-            #     count = 2
+            if elongation > 5:
+                count = 2
 
             return elongation, count, binary
 
