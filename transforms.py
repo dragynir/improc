@@ -529,7 +529,7 @@ class Transforms(object):
             right_ind = fl[-1]
 
             top_left = (left_ind // w, left_ind % w)
-            down_right = (right_ind // w, right_ind % w)
+            down_right = (right_ind // w + 1, right_ind % w + 1)
 
             return top_left, down_right
         
@@ -570,58 +570,112 @@ class Transforms(object):
                 return 1000
             return numerator/denominator
 
+        def restore_mask(mask):
+            
+
+            # print(f'show mask before', mask.shape)
+
+            pad_v = 5
+
+            mask = np.pad(mask, (pad_v, pad_v))
+
+            mask = Transforms.dilate(mask[..., None], ksize=7)
+
+            mask = Transforms.erode(mask[:, :, tf.newaxis], ksize=3).numpy()
+
+            mask = mask[pad_v:-pad_v, pad_v:-pad_v]            
+
+            # print(f'show mask', mask.shape)
+            # plt.figure()
+            # plt.imshow(mask)
+            # plt.show()
+
+            return mask
 
 
-        def find_cell(component):
+
+
+        def find_cell(component, binary, v):
 
             square = np.count_nonzero(component)
+
+            
+            if square < 50:
+                return 1, 0, binary
             
             top_left, down_right = find_box(component)
             
-            mask = component[top_left[0]:top_left[1], down_right[0]:down_right[1]]
+            mask = component[top_left[0]:down_right[0], top_left[1]:down_right[1]]
+
+            # plt.figure()
+            # plt.imshow(mask)
+
+
+            # print(mask.shape)
+            mask = restore_mask(mask)            
+
             hc, hw = find_centers(mask, square)
 
             elongation = find_elongation(mask, hc, hw)
 
-            count = 0
-
-            if square < 50:
-                count =  0
+            mask[mask > 0] = v
+            binary[top_left[0]:down_right[0], top_left[1]:down_right[1]] = mask
 
             count = 1
 
-            return elongation, count
+            # elif elongation > 3:
+            #     count = 2
+
+            return elongation, count, binary
 
         
         cells_count = 0
 
+
+        print(f'Found: {len(u_values)}')
+
+        u_values = sorted(u_values)
+
+
+        result_image = np.repeat(np.zeros_like(binary[..., None]), 3, axis=-1)
+
         all_el = []
         for i, v in enumerate(u_values):
 
+            if v == 0.0:
+                continue
+
+            print(f'Values: {v}')
             component = binary == v
 
-            elongation, count = find_cell(component)
+            # print(binary.shape)
+
+            elongation, count, binary = find_cell(component, binary, v)
             all_el.append(elongation)
 
             cells_count+=count
 
-            binary[binary == v] = i * 5
+            result_image[:, :, 0][binary == v] = (i * 5) % 255
+            result_image[:, :, 1][binary == v] = (i * 25) % 255
+            result_image[:, :, 2][binary == v] = (i * 13) % 255
 
-        all_el = np.array(all_el)
-        all_el = all_el[all_el < 1000]
+
+
+        # all_el = np.array(all_el)
+        # all_el = all_el[all_el < 1000]
         
-        plt.figure()
-        plt.hist(all_el, bins=100)
+        # plt.figure()
+        # plt.hist(all_el, bins=100)
 
-        print(np.mean(all_el))
+        # print(np.mean(all_el))
                   
-        img = np.repeat(binary[..., None], 3, axis=-1)
+        # img = np.repeat(binary[..., None], 3, axis=-1)
 
-        max_v = img.max()
+        # max_v = img.max()
 
-        img[:, :, 1] = np.mod((img[:, :, 0] + 140), max_v)
+        # img[:, :, 1] = np.mod((img[:, :, 0] + 140), max_v)
 
-        return cells_count, tf.cast(img * 255, tf.uint8)
+        return cells_count, tf.cast(result_image, tf.uint8)
     
     @staticmethod
     def otsu_binarization(image):
